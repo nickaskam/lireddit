@@ -71,7 +71,7 @@ export class UserResolver {
         errors: [
           {
             field: "password",
-            message: "length must be greater than 2",
+            message: "length must be greater than 3",
           },
         ],
       };
