@@ -16,6 +16,7 @@ import {
 } from "type-graphql";
 import { Post } from "../entities/Post";
 import { getConnection } from "typeorm";
+import { Updoot } from "../entities/Updoot";
 
 @InputType()
 class PostInput {
@@ -50,17 +51,53 @@ export class PostResolver {
     const isUpdoot = value !== -1;
     const realValue = isUpdoot ? 1 : -1;
     const { userId } = req.session;
-    await getConnection().query(
-      `
-      START TRANSACTION;
-      INSERT INTO updoot ("userId", "postId", value)
-      values (${userId},${postId},${realValue});
-      UPDATE post
-      SET points = points + ${realValue}
-      WHERE id = ${postId};
-      COMMIT;
-      `
-    );
+
+    const updoot = await Updoot.findOne({ where: { postId, userId } });
+
+    // the user has voted on the post before
+    // and they are changing their vote
+    if (updoot && updoot.value !== realValue) {
+      await getConnection().transaction(async (tm) => {
+        await tm.query(
+          `
+          UPDATE updoot
+          SET VALUE = $1
+          WHERE "postId" = $2 and "userId" = $3
+          `,
+          [realValue, postId, userId]
+        );
+
+        await tm.query(
+          `
+          UPDATE post
+          SET points = points + $1
+          WHERE id = $2
+          `,
+          [2 * realValue, postId]
+        );
+      });
+    } else if (!updoot) {
+      // never voted before
+      await getConnection().transaction(async (tm) => {
+        await tm.query(
+          `
+          INSERT INTO updoot ("userId", "postId", value)
+          values ($1, $2, $3)
+          `,
+          [userId, postId, realValue]
+        );
+
+        await tm.query(
+          `
+          UPDATE post
+          SET points = points + $1
+          WHERE id = $2;
+          `,
+          [realValue, postId]
+        );
+      });
+    }
+
     return true;
   }
 
