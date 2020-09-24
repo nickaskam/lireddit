@@ -47,6 +47,23 @@ export class PostResolver {
     return userLoader.load(post.creatorId);
   }
 
+  @FieldResolver(() => Int, { nullable: true })
+  async voteStatus(
+    @Root() post: Post,
+    @Ctx() { updootLoader, req }: MyContext
+  ) {
+    if (!req.session.userId) {
+      return null;
+    }
+
+    const updoot = await updootLoader.load({
+      postId: post.id,
+      userId: req.session.userId,
+    });
+
+    return updoot ? updoot.value : null;
+  }
+
   @Mutation(() => Boolean)
   @UseMiddleware(isAuth)
   async vote(
@@ -118,26 +135,15 @@ export class PostResolver {
 
     const replacements: any[] = [realLimitPlusOne];
 
-    if (req.session.userId) {
-      replacements.push(req.session.userId);
-    }
-
-    let cursorIdx = 3;
     if (cursor) {
       replacements.push(new Date(parseInt(cursor)));
-      cursorIdx = replacements.length;
     }
 
     const posts = await getConnection().query(
       `
-    SELECT p.*, 
-    ${
-      req.session.userId
-        ? '(SELECT value FROM updoot WHERE "userId" = $2 and "postId" = p.id) "voteStatus"'
-        : 'null as "voteStatus"'
-    }
+    SELECT p.*
     FROM post p
-    ${cursor ? `WHERE p."createdAt" < $${cursorIdx}` : ""}
+    ${cursor ? `WHERE p."createdAt" < $2}` : ""}
     ORDER BY p."createdAt" DESC
     LIMIT $1
     `,
